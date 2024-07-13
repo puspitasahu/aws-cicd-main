@@ -1,13 +1,63 @@
 version: 0.2
+
 phases:
+  pre_build:
+    commands:
+      - mvn clean install
+      - echo Logging in to Amazon ECR...
+      - aws --version
+      - $Env:REPOSITORY_URI = "533267320958.dkr.ecr.ap-south-1.amazonaws.com/javatechie-registry"
+      - aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin $Env:REPOSITORY_URI
+      - $Env:COMMIT_HASH = $Env:CODEBUILD_RESOLVED_SOURCE_VERSION.Substring(0, 7)
+      - $Env:IMAGE_TAG = "build-" + ($Env:CODEBUILD_BUILD_ID -split ":")[1]
   build:
     commands:
-      - echo Entered the build phase...
-      - mvn clean package
+      - echo Build started on $(Get-Date)
+      - echo Building the Docker image...
+      - docker build -t $Env:REPOSITORY_URI:latest .
+      - docker tag $Env:REPOSITORY_URI:latest $Env:REPOSITORY_URI:$Env:IMAGE_TAG
   post_build:
     commands:
-      - echo Build completed successfully
+      - echo Build completed on $(Get-Date)
+      - echo Pushing the Docker images...
+      - docker push $Env:REPOSITORY_URI:latest
+      - docker push $Env:REPOSITORY_URI:$Env:IMAGE_TAG
+      - echo Writing image definitions file...
+      - $imagedef = @"
+      - [{"name":"course-service","imageUri":"$Env:REPOSITORY_URI:$Env:IMAGE_TAG"}]
+      - "@
+      - $imagedef | Out-File -FilePath imagedefinitions.json -Encoding ascii
+      - echo Writing image definitions file...
+      - $Env:DOCKER_CONTAINER_NAME = "javatechie-registry"
+      - $imagedef = @"
+      - [{"name":"$Env:DOCKER_CONTAINER_NAME","imageUri":"$Env:REPOSITORY_URI:$Env:IMAGE_TAG"}]
+      - "@
+      - $imagedef | Out-File -FilePath imagedefinitions.json -Encoding ascii
+      - echo $Env:DOCKER_CONTAINER_NAME
+      - echo printing imagedefinitions.json
+      - Get-Content imagedefinitions.json
+
 artifacts:
   files:
+    - imagedefinitions.json
     - target/course-service.jar
-  discard-paths: yes
+
+
+
+
+
+      #These steps need to be followed while deploying the code to ElasticBeanStalk using AWS Code Pipeline
+#No need to create Docker file for this deployment
+#version: 0.2
+#phases:
+ # build:
+  #  commands:
+    #  - echo Entered the build phase...
+     #- mvn clean package
+  #post_build:
+   # commands:
+     # - echo Build completed successfully
+#artifacts:
+  #files:
+  #  - target/course-service.jar
+ # discard-paths: yes
